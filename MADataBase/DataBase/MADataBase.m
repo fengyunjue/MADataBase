@@ -13,13 +13,6 @@
 #import <objc/runtime.h>
 #import "MJPropertyType+Item.h"
 
-typedef enum{
-    MASqlTypeInsert = 0,
-    MASqlTypeCreate,
-    MASqlTypeUpdata,
-    MASqlTypeQuery
-} MASqlType;
-
 @implementation MADataBase
 {
     FMDatabase *_dataBase;
@@ -59,6 +52,7 @@ static MADataBase *_instance;
     if (!_dataBase) {
         _dataBase = [FMDatabase databaseWithPath:[self dataFilePath]];
     }
+    
     if (![_dataBase open]) {
         NSLog(@"打开数据库失败");
         return NO;
@@ -76,7 +70,7 @@ static MADataBase *_instance;
 #pragma mark - 检验数据表是否存在
 -(BOOL)checkTableNameWithClass:(Class)aClass{
     
-    NSString *sql = [NSString stringWithFormat:@"SELECT COUNT(*) FROM sqlite_master where type='table' and name='%@';",[self tableNameWithClass:aClass]];
+    NSString *sql = [NSString stringWithFormat:@"SELECT COUNT(*) FROM sqlite_master where type=\'table\' and name=\'%@\';",[self tableNameWithClass:aClass]];
     
     FMResultSet *rs = [_dataBase executeQuery:sql];
     
@@ -128,12 +122,22 @@ static MADataBase *_instance;
    return [_dataBase executeUpdate:sql];
 }
 
+#pragma mark - 插入数据
+- (BOOL)insertDataWithData:(NSObject *)data
+{
+    if ([self initDataBaseWithClass:object_getClass(data)]) {
+        return [self insertWithData:data mainClass:object_getClass(data)];
+    }else{
+        return 0;
+    }
+}
 /**
  *  先将data的表为从表的数据插入完成
  */
-- (long long)insertWithData:(NSObject *)data
+- (int)insertWithData:(NSObject *)data mainClass:(Class)mainClass
 {
     if (data == nil) return 0;
+    
     // 1. 创建sql语句
     NSString *tableName = [self tableNameWithData:data];
     NSMutableString *sql = [NSMutableString string];
@@ -149,9 +153,7 @@ static MADataBase *_instance;
         if ([property.name isEqualToString:@"id"]) { continue;}
         if (property.type.dbType == nil) {continue;}
         if ([property.type.dbType isEqualToString:@"OBJECT"]){
-            NSNumber *number = @([self insertWithData:[property valueForObject:data]]);
-            NSObject *obj = [property valueForObject:data];
-            NSLog(@"-------%@---%@",obj,property.name);
+            NSNumber *number = @([self insertWithData:[property valueForObject:data] mainClass:mainClass]);
             [values addObject:number];
         }else{
             if ([property.type.dbType isEqualToString:@"JSON"]) {
@@ -173,22 +175,20 @@ static MADataBase *_instance;
     [sql appendString:valusStr];
     NSLog(@"插入语句---%@",sql);
     
+    if (object_getClass(data) != mainClass) {
+        int search_id = [self queryDataWithClass:object_getClass(data) Values:values];
+        if (search_id)return search_id;
+    }
+
+    
     if ([_dataBase executeUpdate:sql withArgumentsInArray:values]) {
-        return [_dataBase lastInsertRowId];
+        return (int)[_dataBase lastInsertRowId];
     }else{
         return 0;
     }
 }
 
-#pragma mark - 插入数据
-- (BOOL)insertDataWithData:(NSObject *)data
-{
-    if ([self initDataBaseWithClass:object_getClass(data)]) {
-        return [self insertWithData:data];
-    }else{
-        return 0;
-    }
-}
+#pragma mark - 删除数据
 - (BOOL)deleteAllDataWithClass:(Class)aClass
 {
     if ([self initDataBaseWithClass:aClass]) {
@@ -208,6 +208,52 @@ static MADataBase *_instance;
     return [self queryDataWithClass:aClass SearchSqlStr:nil];
 }
 
+#pragma mark 全条件查询
+- (int)queryDataWithClass:(Class)aClass Values:(NSArray *)values
+{
+    if ([self initDataBaseWithClass:aClass]) {
+        NSString *tableName = [self tableNameWithClass:aClass];
+        // 1. 创建sql语句
+        NSMutableString *sql = [NSMutableString stringWithFormat:@"SELECT * FROM %@",tableName];
+        
+        NSMutableString *searchSql = [NSMutableString string];
+        
+        for (int i = 0; i < [aClass properties].count; i++) {
+            
+            MJProperty *property = [aClass properties][i];
+            if ([property.name isEqualToString:@"id"]) { continue;}
+            if (property.type.dbType == nil) {continue;}
+            
+            NSObject *value = values[i];
+            
+            if ([property.type.dbType isEqualToString:@"OBJECT"]) {
+                [searchSql appendFormat:@" %@ = \'%@\' and",property.name,value];
+            }else{
+                [searchSql appendFormat:@"%@ = \'%@\' and",property.name,value];
+            }
+        }
+        
+        if (values.count > 0) {
+            [searchSql deleteCharactersInRange:NSMakeRange(searchSql.length - 3, 3)];
+            [sql appendFormat:@" WHERE %@",searchSql];
+        }
+        
+        // 2. 执行sql语句
+        FMResultSet *rs = [_dataBase executeQuery:sql];
+        
+        int search_id = 0;
+        if ([rs columnCount] >= 1) {
+            [rs next];
+            NSNumber *number = [rs objectForColumnName:@"id"];
+            if (![number isEqual:[NSNull null]])
+               search_id = number.intValue;
+        }
+        [rs close];
+        return search_id;
+    }
+    return 0;
+}
+
 #pragma mark 根据条件查询数据
 - (NSMutableArray *)queryDataWithClass:(Class)aClass SearchSqlStr:(NSString *)str
 {
@@ -215,14 +261,20 @@ static MADataBase *_instance;
         
         NSString *tableName = [self tableNameWithClass:aClass];
         // 1. 创建sql语句
-        NSMutableString *sql = [NSMutableString stringWithFormat:@"SELECT "];
-        NSMutableArray *allCalss = [self foreignClassWithMainClass:aClass];
-        [allCalss insertObject:aClass atIndex:0];
+        NSMutableString *sql = [NSMutableString stringWithString:@"SELECT "];
         
-        for (Class mainClass in allCalss) {
+        for (Class mainClass in [self allClassWithMainClass:aClass]) {
             for (MJProperty *property in [mainClass properties]) {
-                NSString *str = [NSString stringWithFormat:@"%@.%@",[self tableNameWithClass:mainClass],property.name];
+                NSString *str = nil;
+                
+                if ([property.type.dbType isEqualToString:@"OBJECT"]) {
+                    str = [NSString stringWithFormat:@"%@.%@",[self tableNameWithClass:mainClass],property.name];
+                }else{
+                    str = [NSString stringWithFormat:@"%@.%@",[self tableNameWithClass:mainClass],property.name];
+                }
+                
                 [sql appendFormat:@" %@ as \'%@\' ,",str,str];
+
             }
         }
         [sql deleteCharactersInRange:NSMakeRange(sql.length - 1, 1)];
@@ -257,8 +309,9 @@ static MADataBase *_instance;
     }
     return nil;
 }
+
 /**
- *  查询
+ *  对查询结果进行赋值
  */
 - (NSObject *)columnWithClass:(Class)aClass ResultSet:(FMResultSet *)rs{
     
@@ -291,7 +344,7 @@ static MADataBase *_instance;
 }
 
 /**
- *  外键关联关系
+ *  查询外键关联关系
  */
 - (NSString *)foreignSQLWithMainClass:(Class)aClass
 {
@@ -301,7 +354,7 @@ static MADataBase *_instance;
         if ([property.type.dbType isEqualToString:@"OBJECT"]) {
             NSString *tableName = [self tableNameWithClass:aClass];
             NSString *foreignTableName = [self tableNameWithClass:property.type.typeClass];
-            [sql appendFormat:@" LEFT JOIN %@ ON %@.%@_id = %@.id ",foreignTableName,tableName,foreignTableName,foreignTableName];
+            [sql appendFormat:@" LEFT JOIN %@ ON %@.%@ = %@.id ",foreignTableName,tableName,property.name,foreignTableName];
             if ([property.type.typeClass properties].count > 0) {
                 [sql appendString:[self foreignSQLWithMainClass:property.type.typeClass]];
             }
@@ -311,7 +364,17 @@ static MADataBase *_instance;
 }
 
 /**
- *  获取所有参与的类
+ *  获取所有的类
+ */
+- (NSMutableArray *)allClassWithMainClass:(Class)aClass
+{
+    NSMutableArray *allCalss = [self foreignClassWithMainClass:aClass];
+    [allCalss insertObject:aClass atIndex:0];
+    return allCalss;
+}
+
+/**
+ *  获取所有关联的类
  */
 - (NSMutableArray *)foreignClassWithMainClass:(Class)aClass
 {

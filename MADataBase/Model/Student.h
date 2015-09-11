@@ -24,7 +24,7 @@
 
 @property (nonatomic, strong) Book *book;
 
-@property (nonatomic, strong) Book *book2;
+//@property (nonatomic, strong) Book *book2;
 
 //@property (nonatomic, strong) Teacher *teacher;
 //

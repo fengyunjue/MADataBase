@@ -25,7 +25,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    [self insertData];
+    [self queryData];
     
     [[MADataBase shareDataBase]closeDataBase];
     
@@ -35,8 +35,8 @@
  */
 - (void)queryData
 {
-    [[MADataBase shareDataBase]deleteAllDataWithClass:[Teacher class]];
-    NSArray *array = [[MADataBase shareDataBase]queryDataWithClass:[Student class] SearchSqlStr:@"mString = \"mString_0\""];
+   
+    NSArray *array = [[MADataBase shareDataBase]queryDataWithClass:[Student class] SearchSqlStr:nil];
     NSLog(@"%@",array);
 }
 /**
@@ -78,7 +78,7 @@
     //    int i = 1;
     for (int i = 0; i < 100; i++) {
         Book *book = [[Book alloc]init];
-        book.bookName = [NSString stringWithFormat:@"童话_%d",i];
+        book.bookName = [NSString stringWithFormat:@"童话"];
         
         Car *car = [[Car alloc]init];
         car.color = [NSString stringWithFormat:@"红_%d",i];
@@ -91,9 +91,9 @@
         //        student.mString = [NSString stringWithFormat:@"mString_%d",i];
         //        student.name = [NSString stringWithFormat:@"name_%d",i];
         student.book = book;
-        Book *book2 = [[Book alloc]init];
-        book2.bookName = [NSString stringWithFormat:@"新书_%d",i];
-        student.book2 = book2;
+//        Book *book2 = [[Book alloc]init];
+//        book2.bookName = [NSString stringWithFormat:@"新书_%d",i];
+//        student.book2 = book2;
         //        student.teacher = teacher;
         [[MADataBase shareDataBase]insertDataWithData:student];
     }

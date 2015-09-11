@@ -176,8 +176,11 @@ static MADataBase *_instance;
     NSLog(@"插入语句---%@",sql);
     
     if (object_getClass(data) != mainClass) {
-        int search_id = [self queryDataWithClass:object_getClass(data) Values:values];
-        if (search_id)return search_id;
+        int search_id = [self queryIDWithClass:object_getClass(data) Values:values];
+        if (search_id){
+            NSLog(@"存在该数据---%d",search_id);
+            return search_id;
+        }
     }
 
     
@@ -189,72 +192,155 @@ static MADataBase *_instance;
 }
 
 #pragma mark - 删除数据
+#pragma mark 删除所有数据
 - (BOOL)deleteAllDataWithClass:(Class)aClass
 {
+    return [self deleteDataWithClass:aClass SearchSqlStr:nil];
+}
+#pragma mark 按条件删除数据
+- (BOOL)deleteDataWithClass:(Class)aClass SearchSqlStr:(NSString *)sqlStr
+{
     if ([self initDataBaseWithClass:aClass]) {
-        NSString *tableName = [self tableNameWithClass:aClass];
-        // 1.创建sql语句
-        NSMutableString *sql = [NSMutableString stringWithFormat:@"delete from %@",tableName];
+        NSMutableString *sql = [NSMutableString string];
+        if (sqlStr.length == 0) { // 没有附加条件,删除相关的表
+            for (Class fClass in [self allClassWithMainClass:aClass]) {
+                NSString *tableName = [self tableNameWithClass:fClass];
+                [sql appendFormat:@"delete from %@;",tableName];
+            }
+        }else{
+            NSString *tableName = [self tableNameWithClass:aClass];
+            [sql appendFormat:@"delete from %@ WHERE %@;",tableName,sqlStr];
+            
+//            for (Class fClass in [self allClassWithMainClass:aClass]) {
+//                for (MJProperty *property in [fClass properties]) {
+//                    if ([property.type.dbType isEqualToString:@"OBJECT"]) {
+//                        int count = [self queryDataCountWithClass:fClass foreignClass:property.type.typeClass foreignValue:]
+//                    }
+//                }
+//                
+//            }
+            
+        }
+        [_dataBase executeUpdate:sql];
         
-        return [_dataBase executeUpdate:sql];
+        [_dataBase executeQueryWithFormat:@"SELECT id FROM deleted"];
+        FMResultSet *rs = [_dataBase executeQuery:sql];
+       
+        while ([rs next]) {
+            for (int i = 0; i < [rs columnCount]; i++) {
+                NSLog(@"%@---%@",[rs columnNameForIndex:i],[rs objectForColumnIndex:i]);
+            }
+//            NSNumber *number = [rs objectForColumnName:@"id"];
+//            if (![number isEqual:[NSNull null]])
+//                [array addObject:number];
+        }
+        [rs close];
+
         
+        return YES;
     }
     return NO;
 }
+#pragma mark 删除单条数据
+//- (BOOL)deleteDataWithClass:(Class)aClass SearchSqlStr:(NSString *)sqlStr
+//{
+//    if (self initDataBaseWithClass:<#(__unsafe_unretained Class)#>) {
+//        <#statements#>
+//    }
+//    
+//    return NO;
+//}
+
 #pragma mark - 查询数据
 #pragma mark 查询所有数据
 - (NSArray *)queryAllDataWithClass:(Class)aClass
 {
     return [self queryDataWithClass:aClass SearchSqlStr:nil];
 }
+#pragma mark 查询外键的id是否存在于多条数据
+/**
+ *  查询外键的id存在在多少条数据中
+ *
+ *  @return 数量
+ */
+- (int)queryDataCountWithClass:(Class)aClass foreignClass:(Class)foreignClass foreignValue:(int)foreignValue
+{
+    NSMutableString *searchSql = [NSMutableString string];
+    [searchSql appendFormat:@"%@ = \'%d\'",NSStringFromClass(foreignClass),foreignValue];
+    NSMutableArray *array = [self queryIdCountWithClass:aClass SearchSqlStr:searchSql];
+    return (int)array.count;
+}
 
 #pragma mark 全条件查询
-- (int)queryDataWithClass:(Class)aClass Values:(NSArray *)values
+/**
+ *  全条件查询
+ *
+ *  @return 查询到的id值
+ */
+- (int)queryIDWithClass:(Class)aClass Values:(NSArray *)values
 {
+    NSMutableString *searchSql = [NSMutableString string];
+
+    for (int i = 0; i < [aClass properties].count; i++) {
+        
+        MJProperty *property = [aClass properties][i];
+        if ([property.name isEqualToString:@"id"]) { continue;}
+        if (property.type.dbType == nil) {continue;}
+        
+        NSObject *value = values[i];
+        
+        if ([property.type.dbType isEqualToString:@"OBJECT"]) {
+            [searchSql appendFormat:@" %@ = \'%@\' and",property.name,value];
+        }else{
+            [searchSql appendFormat:@" %@ = \'%@\' and",property.name,value];
+        }
+    }
+    if (values.count > 0)
+        [searchSql deleteCharactersInRange:NSMakeRange(searchSql.length - 3, 3)];
+    // 2. 执行sql语句
+    int search_id = 0;
+    NSArray *array = [self queryIdCountWithClass:aClass SearchSqlStr:searchSql];
+    if (array.count > 0) {
+        search_id = ((NSNumber *)array[0]).intValue;
+    }
+    return search_id;
+
+}
+
+#pragma mark 普通查询
+/**
+ *  普通查询
+ *
+ *  @return id的数组
+ */
+- (NSMutableArray *)queryIdCountWithClass:(Class)aClass SearchSqlStr:(NSString *)str
+{
+    NSMutableArray *array = nil;
+    
     if ([self initDataBaseWithClass:aClass]) {
         NSString *tableName = [self tableNameWithClass:aClass];
         // 1. 创建sql语句
-        NSMutableString *sql = [NSMutableString stringWithFormat:@"SELECT * FROM %@",tableName];
-        
-        NSMutableString *searchSql = [NSMutableString string];
-        
-        for (int i = 0; i < [aClass properties].count; i++) {
-            
-            MJProperty *property = [aClass properties][i];
-            if ([property.name isEqualToString:@"id"]) { continue;}
-            if (property.type.dbType == nil) {continue;}
-            
-            NSObject *value = values[i];
-            
-            if ([property.type.dbType isEqualToString:@"OBJECT"]) {
-                [searchSql appendFormat:@" %@ = \'%@\' and",property.name,value];
-            }else{
-                [searchSql appendFormat:@"%@ = \'%@\' and",property.name,value];
-            }
+        NSMutableString *sql = [NSMutableString stringWithFormat:@"SELECT * FROM %@ ",tableName];
+        if (str.length > 0) {
+            [sql appendFormat:@"WHERE %@",str];
         }
-        
-        if (values.count > 0) {
-            [searchSql deleteCharactersInRange:NSMakeRange(searchSql.length - 3, 3)];
-            [sql appendFormat:@" WHERE %@",searchSql];
-        }
-        
         // 2. 执行sql语句
         FMResultSet *rs = [_dataBase executeQuery:sql];
-        
-        int search_id = 0;
-        if ([rs columnCount] >= 1) {
-            [rs next];
+        while ([rs next]) {
+            if (array == nil) {
+                array = [NSMutableArray array];
+            }
             NSNumber *number = [rs objectForColumnName:@"id"];
             if (![number isEqual:[NSNull null]])
-               search_id = number.intValue;
+                [array addObject:number];
         }
         [rs close];
-        return search_id;
     }
-    return 0;
+    
+    return array;
 }
 
-#pragma mark 根据条件查询数据
+#pragma mark 根据条件级联查询数据
 - (NSMutableArray *)queryDataWithClass:(Class)aClass SearchSqlStr:(NSString *)str
 {
     if ([self initDataBaseWithClass:aClass]) {
@@ -403,8 +489,7 @@ static MADataBase *_instance;
  */
 - (NSString *)tableNameWithClass:(Class)aClass
 {
-    NSString *className = [NSString stringWithUTF8String:class_getName(aClass)];
-    return [NSString stringWithFormat:@"T_%@",className];
+    return [NSString stringWithFormat:@"T_%@",NSStringFromClass(aClass)];
 }
 
 /**

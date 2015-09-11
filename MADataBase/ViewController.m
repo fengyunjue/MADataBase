@@ -25,7 +25,10 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    [self queryData];
+//  [self queryData];
+    
+//    [self deleteData];
+    [self insertData];
     
     [[MADataBase shareDataBase]closeDataBase];
     
@@ -42,9 +45,11 @@
 /**
  *  删除数据
  */
-- (void)deleteAllData
+- (void)deleteData
 {
-    [[MADataBase shareDataBase]deleteAllDataWithClass:[Student class]];
+//    [[MADataBase shareDataBase]deleteAllDataWithClass:[Student class]];
+    
+    [[MADataBase shareDataBase]deleteDataWithClass:[Student class] SearchSqlStr:@"id = 4"];
 }
 
 /**
@@ -76,9 +81,9 @@
     //        [[MADataBase shareDataBase]insertDataWithData:student];
     //    }
     //    int i = 1;
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 50; i++) {
         Book *book = [[Book alloc]init];
-        book.bookName = [NSString stringWithFormat:@"童话"];
+        book.bookName = [NSString stringWithFormat:@"童话_%d",i / 2];
         
         Car *car = [[Car alloc]init];
         car.color = [NSString stringWithFormat:@"红_%d",i];

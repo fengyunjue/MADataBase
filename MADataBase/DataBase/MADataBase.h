@@ -24,8 +24,14 @@
  *  根据条件查询，如 id = 2
  */
 - (NSArray *)queryDataWithClass:(Class)aClass SearchSqlStr:(NSString *)str;
-
+/**
+ *  删除所有数据
+ */
 - (BOOL)deleteAllDataWithClass:(Class)aClass;
+/**
+ *  按条件删除
+ */
+- (BOOL)deleteDataWithClass:(Class)aClass SearchSqlStr:(NSString *)sqlStr;
 /**
  *  开启数据库
  */

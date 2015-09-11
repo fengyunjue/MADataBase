@@ -9,7 +9,7 @@
     [[MADataBase shareDataBase]deleteAllDataWithClass:[Student class]];
 ####查询对象方法
     NSArray *array = [[MADataBase shareDataBase]queryDataWithClass:[Student class] 
-                     SearchSqlStr:@"mString = \"mString_0\""];//searchSqlStr是附加查询条件,不写查询全部数据
+             SearchSqlStr:@"mString = \"mString_0\""];//searchSqlStr是附加查询条件,置空查询全部数据
 ####关闭方法
     [[MADataBase shareDataBase]closeDataBase]; // 不需要打开方法, 在使用插入等方法时，将自动打开数据库
     
